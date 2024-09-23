@@ -1,0 +1,1 @@
+# O1 Test-Time Compute Scaling Laws
