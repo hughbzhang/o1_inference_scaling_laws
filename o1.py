@@ -1,6 +1,7 @@
 import os
 import json
-import matplotlib.pyplot as plt
+import typing
+import logging
 from datasets import load_dataset
 from openai import OpenAI
 from tqdm import tqdm
@@ -9,16 +10,14 @@ import numpy as np
 import concurrent.futures
 import statistics
 from PIL import Image
+from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph
 
-model = "o1-mini"
-SHADE_REGIONS = False
-dataset = load_dataset("AI-MO/aimo-validation-aime")
-dataset = dataset["train"].filter(lambda example: "2024" in example["url"])
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+O1_MODEL = "o1-mini"
 
-assert len(dataset) == 30, f"Expected 30 problems, but found {len(dataset)}"
-
+OPENAI_CLIENT = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+RESPONSE_CACHE_FILENAME = 'helpers/response_cache.json'
 PROMPT = """You are a math problem solver. I will give you a problem from the American Invitational Mathematics Examination (AIME). At the end, provide the final answer as a single integer.
 
 Important: You should try your best to use around {token_limit} tokens in your reasoning steps.
@@ -30,28 +29,71 @@ Here's the problem:
 Solve this problem, use around {token_limit} tokens in your reasoning, and provide the final answer as a single integer.
 """
 
-def get_or_create_cache(filename):
+
+def load_2024_dataset() -> list[dict]:
+    """
+    Load the dataset of problems.
+
+    Returns:
+        list[dict]: The dataset of problems.
+    """
+    dataset_original = load_dataset("AI-MO/aimo-validation-aime")
+
+    # Filter out problems that are not from 2024
+    dataset = dataset_original["train"].filter(lambda example: "2024" in example["url"])
+
+    logging.debug(f"Filtered dataset size: {len(dataset)}.")
+    assert len(dataset) == 30, f"Expected 30 problems after filtering by 2024, but found {len(dataset)}"
+    return dataset
+
+
+def get_or_create_cache(filename: str) -> dict[str, typing.Any]:
+    """
+    Get the cache if it exists, otherwise create it.
+
+    Args:
+        filename (str): The filename of the cache to get or create.
+
+    Returns:
+        dict: The cache.
+    """
     if os.path.exists(filename):
         with open(filename, 'r') as f:
             return json.load(f)
     return {}
 
+
 def save_cache(cache, filename):
     with open(filename, 'w') as f:
         json.dump(cache, f)
 
-def get_response(problem, token_limit, cache, idx=0):
+
+def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0) -> dict:
+    """
+    Get a response from the model.
+
+    Args:
+        problem (str): The problem to process.
+        token_limit (int): The token limit for the model.
+        cache (dict): The cache to use for storing responses.
+        idx (int, optional): The index of the response to process. Defaults to 0.
+
+    Returns:
+        dict: The response from the model.
+    """
 
     if idx > 0:
-        cache_key = f"{model}_{PROMPT}_{problem}_{token_limit}_{idx}"
+        cache_key = f"{O1_MODEL}_{PROMPT}_{problem}_{token_limit}_{idx}"
     else:
-        cache_key = f"{model}_{PROMPT}_{problem}_{token_limit}"
+        cache_key = f"{O1_MODEL}_{PROMPT}_{problem}_{token_limit}"
     if cache_key in cache:
+        logging.debug(f"Cache hit for problem: {problem[:20]}. idx: {idx}. Requested tokens: {token_limit}.")
         return cache[cache_key]
     
     formatted_prompt = PROMPT.format(problem=problem, token_limit=token_limit)
-    response = client.chat.completions.create(
-        model=model,
+    logging.debug(f"Requesting {token_limit} tokens for problem starting with: {problem[:20]} running {idx} of {N} times.")
+    response = OPENAI_CLIENT.chat.completions.create(
+        model=O1_MODEL,
         messages=[{"role": "user", "content": formatted_prompt}]
     )
     result = {
@@ -59,11 +101,21 @@ def get_response(problem, token_limit, cache, idx=0):
         'tokens': response.usage.completion_tokens
     }
     cache[cache_key] = result
+    logging.debug(f"Received {result['tokens']} tokens for problem starting with: {problem[:20]}. Requested tokens: {token_limit}.")
     return result
 
-cache = get_or_create_cache('response_cache.json')
 
-def extract_answer(response_content, cache):
+def extract_answer(response_content: str, cache: dict) -> int:
+    """
+    Extract the final integer answer from the response content.
+
+    Args:
+        response_content (str): The response content to extract the answer from.
+        cache (dict): The cache to use for storing responses.
+
+    Returns:
+        int: The final integer answer.
+    """
     cache_key = f"extract_answer_{response_content}"
     if cache_key in cache:
         return cache[cache_key]
@@ -78,7 +130,7 @@ def extract_answer(response_content, cache):
     Final answer (integer only):
     """
     
-    extraction_response = client.chat.completions.create(
+    extraction_response = OPENAI_CLIENT.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": extraction_prompt}]
     )
@@ -92,162 +144,172 @@ def extract_answer(response_content, cache):
     cache[cache_key] = result
     return result
 
-def process_single_response(example, token_limit, cache, idx):
+
+def generate_single_response(example: dict, token_limit: int, cache: dict, idx: int) -> tuple[int, int]:
+    """
+    Get a single response for a problem.
+
+    Args:
+        example (dict): The problem to process.
+        token_limit (int): The token limit for the model.
+        cache (dict): The cache to use for storing responses.
+        idx (int): The index of the response to process.
+
+    Returns:
+        tuple[int, int]: A tuple containing the answer and the number of tokens used.
+    """
     response = get_response(example['problem'], token_limit, cache, idx=idx)
     answer = extract_answer(response['content'], cache)
     assert answer is not None, f"Answer is None for problem: {example['problem']}"
     return answer, response['tokens']
 
-def process_example(example, token_limit, cache, N):
+
+def process_single_example(example: dict, token_limit: int, cache: dict, N: int) -> tuple[float, int]:
+    """
+    Process a single example by running the model N times and then taking the majority vote.
+
+    Args:
+        example (dict): The problem to process.
+        token_limit (int): The token limit for the model.
+        cache (dict): The cache to use for storing responses.
+        N (int): The number of times to run the model.
+
+    Returns:
+        tuple[bool, int]: A tuple containing the majority vote result and the total number 
+        of tokens used.
+    """
+    answers = []
+    total_tokens = 0
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(process_single_response, example, token_limit, cache, idx) for idx in range(N)]
-        
-        answers = []
-        total_tokens = 0
-        
+        futures = [executor.submit(generate_single_response, example, token_limit, cache, idx) for idx in range(N)]
+
         for future in concurrent.futures.as_completed(futures):
             try:
                 answer, tokens = future.result()
             except Exception as e:
-                print(f"Error processing result: {e}")
+                logging.exception(f"Error processing result: {e}.")
                 answer, tokens = 0, 0
 
             answers.append(answer)
             total_tokens += tokens
+    
+    logging.debug(f"Obtained answers for problem starting with: {example['problem'][:20]}.\n"
+                  f"Correct answer: {example['answer']}.\n"
+                  f"Obtained answers: {sorted(answers)}.")
 
-    majority_answer = statistics.mode(answers)
-    is_correct = majority_answer == int(example['answer'])
-    return is_correct, total_tokens
+    # Compute majority vote
+    majority_answers = statistics.multimode(answers)
 
-# Graphs that include majority vote extending past 2^14 tokens for reasoning
-def majority_vote_graphs():
+    score = 0
 
-    # SHADE_REGIONS determines whether we include the plot with shaded regions describing the different strategies
-    # If False, it generates the headline reconstruction plot of the o1 inference-time scaling laws
-    if SHADE_REGIONS:
+    if int(example['answer']) in majority_answers:
+        # If the majority answer is in the correct answer, we consider it correct.
+        # If there are multiple majority answers, we give partial credit to preserve
+        # determinism.
+        score = 1 / len(majority_answers)
+        majority_answer = None
+
+    return score, total_tokens
+
+
+def run_experiments(dataset: list[dict], cache: dict[str, typing.Any], token_limit: int, N: int) -> tuple[float, float]:
+    """
+    Run experiments given the token limit and return results.
+
+    Args:
+        dataset (list[dict]): The dataset of problems to run the experiments on.
+        cache (dict[str, typing.Any]): The cache to use for storing responses.
+        token_limit (int): The token limit for the model.
+        N (int): The number of times to run the model.
+
+    Returns:
+        tuple[float, float]: A tuple containing the accuracy and average tokens used.
+    """
+    total_score = 0
+    actual_tokens_used = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+
+        futures = [executor.submit(process_single_example, example, token_limit, cache, N) for example in dataset]
+
+        for future in concurrent.futures.as_completed(futures):
+            score, tokens = future.result()
+            if score > 0:
+                total_score += score
+            actual_tokens_used.append(tokens)
+        
+        save_cache(cache, RESPONSE_CACHE_FILENAME)
+    
+    accuracy = total_score / len(dataset)
+    avg_tokens_used = np.mean(actual_tokens_used)
+    logging.debug(f"Requested token limit: {token_limit}. Accuracy: {accuracy}. Average tokens used: {avg_tokens_used}.")
+    return accuracy, avg_tokens_used
+
+
+def run_majority_vote_inference_experiments(dataset: list[dict], cache: dict[str, typing.Any], shade_regions: bool = False) -> None:
+    """
+    Run experiments and create graphs that include majority vote extending past 2^14 tokens 
+    for reasoning. We observe that models stop using more tokens even when asked to around 2^11.
+    We solve this by doing repeated sampling and then taking the mode of the answers for all 
+    queries above 2^11. This is not perfect, but still seems to help a bit.
+
+    Args:
+        dataset (list[dict]): The dataset of problems to run the experiments on.
+        cache (dict[str, typing.Any]): The cache to use for storing responses.
+        shade_regions (bool, optional): determines whether we include the plot with shaded 
+        regions describing the different strategies. If False, it generates the headline 
+        reconstruction plot of the o1 inference-time scaling laws.
+    """
+    logging.debug(f"Start running majority vote experiments.")
+
+    if shade_regions:
         token_limits = [2**i for i in range(4, 19)]
     else:
         token_limits = [2**i for i in range(4, 15)]
 
     results = []
+
     for token_limit in tqdm(token_limits):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
-
-            # We observe that models stop using more tokens even when asked to around 2^11
-            # We solve this by doing repeated sampling and then taking the mode of the answers
-            # for all queries above 2^11. This is not perfect, but still seems to help a bit.
-            token_limit_cache = min(2**11, token_limit)
-            N = token_limit // token_limit_cache
-
-            futures = [executor.submit(process_example, example, token_limit_cache, cache, N) for example in dataset]
-            
-            correct_count = 0
-            actual_tokens = []
-            
-            for future in concurrent.futures.as_completed(futures):
-                is_correct, tokens = future.result()
-                if is_correct:
-                    correct_count += 1
-                actual_tokens.append(tokens)
-            
-            save_cache(cache, 'response_cache.json')
-        
-        accuracy = correct_count / len(dataset)
-        avg_tokens = np.mean(actual_tokens)
-        results.append({
+        actual_token_limit = min(2**11, token_limit)
+        # We run the experiment N times for each token limit
+        N = token_limit // actual_token_limit
+        accuracy, avg_tokens_used = run_experiments(dataset, cache, actual_token_limit, N)
+        result = {
             'token_limit': token_limit,
             'accuracy': accuracy,
-            'avg_tokens': avg_tokens
-        })
+            'avg_tokens_used': avg_tokens_used
+        }
+        results.append(result)
 
-    # Create the plot for the right subfigure
-    plt.figure(figsize=(5, 6))
-    plt.scatter([r['avg_tokens'] for r in results], [100*r['accuracy'] for r in results], marker='o')
-    plt.xscale('log', base=2)
-    plt.xlabel('tokens used at test-time (log scale)', fontsize=13)
-    plt.ylabel('pass@1 accuracy', fontsize=13)
-    plt.ylim(0, 100)
-    plt.title('o1 mini AIME accuracy\nat test time (reconstructed)', fontsize=15)
-    plt.tick_params(axis='both', which='major', labelsize=10)
-
-    if SHADE_REGIONS:
-        plt.axvline(x=2**14, color='black', linestyle='--')
-
-        plt.axvspan(min([r['avg_tokens'] for r in results]) // 2, 2**14, facecolor='lightgreen', alpha=0.3)
-        plt.axvspan(2**14, 2**17, facecolor='lightblue', alpha=0.3)
-
-        plt.text(2**11, 85, "just ask o1-mini \nto think longer", fontsize=12, ha='center', va='center', color='green')
-        plt.text(2**15*1.4, 85, 'majority\nvote', fontsize=12, ha='center', va='center', color='blue')
-
-        plt.axvline(x=2**17, color='black', linestyle='--')
-        plt.text(2**19, 85, 'no gains', fontsize=12, ha='center', va='center', color='red')
-        plt.axvspan(2**17, 2**21, facecolor='lightcoral', alpha=0.3)
+    plot_majority_vote_graph(results, shade_regions)
 
 
-    plt.tight_layout()
-    plt.savefig('accuracy_vs_tokens_{}.png'.format("shade_regions" if SHADE_REGIONS else "no_shade_regions"), dpi=300, facecolor='white', edgecolor='none')
-    plt.close()
+def run_just_ask_nicely_experiments(dataset: list[dict], cache: dict[str, typing.Any], run_full_range: bool = False) -> None:
+    """
+    Run experiments where we ask the model to use more tokens by asking it to use more tokens nicely.
 
-    print("Plot saved as accuracy_vs_tokens.png")
-
-    plt.figure(figsize=(11, 10))
-    plt.scatter([r['token_limit'] for r in results], [r['avg_tokens'] for r in results], marker='o')
-    plt.xscale('log', base=2)
-    plt.yscale('log', base=2)
-    plt.xlabel('Token Limit')
-    plt.ylabel('Actual Tokens Used')
-    plt.title('Token Limit vs. Actual Tokens Used')
-    plt.tight_layout()
-    plt.savefig('token_limit_vs_actual.png')
-
-    with open('results_log.json', 'w') as f:
-        json.dump(results, f, indent=2)
-
-    print("plots saved to accuracy_vs_tokens.png and token_limit_vs_actual.png")
-
-# Try to get the model to use more tokens by asking it to use more tokens
-def just_ask_nicely():
-    # token_limits = [2**i for i in range(20)]
+    Args:
+        dataset (list[dict]): The dataset of problems to run the experiments on.
+        cache (dict[str, typing.Any]): The cache to use for storing responses.
+    """
+    logging.debug(f"Start running just ask nicely experiments.")
     token_limits = [2**i for i in range(4, 12)]
+    if run_full_range:
+        token_limits = [2**i for i in range(20)]
     results = []
     for token_limit in tqdm(token_limits):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
-
-            futures = [executor.submit(process_example, example, token_limit, cache, 1) for example in dataset]
-            
-            correct_count = 0
-            actual_tokens = []
-            
-            for future in concurrent.futures.as_completed(futures):
-                is_correct, tokens = future.result()
-                if is_correct:
-                    correct_count += 1
-                actual_tokens.append(tokens)
-            
-            save_cache(cache, 'response_cache.json')
-        
-        accuracy = correct_count / len(dataset)
-        avg_tokens = np.mean(actual_tokens)
-        results.append({
+        accuracy, avg_tokens_used = run_experiments(dataset, cache, token_limit, 1)
+        result = {
             'token_limit': token_limit,
             'accuracy': accuracy,
-            'avg_tokens': avg_tokens
-        })
+            'avg_tokens_used': avg_tokens_used
+        }
+        results.append(result)
+    plot_just_ask_nicely_graph(results, run_full_range)
 
-    plt.figure(figsize=(6, 6))
-    plt.scatter([r['token_limit'] for r in results], [r['avg_tokens'] for r in results], marker='o')
-    plt.xscale('log', base=2)
-    plt.yscale('log', base=2)
-    plt.xlabel('Token Limit')
-    plt.ylabel('Actual Tokens Used')
-    plt.title('Token Limit vs. Actual Tokens Used')
-    plt.tight_layout()
-    plt.savefig('just_ask_nicely_tokens.png')
 
-    with open('results_log.json', 'w') as f:
-        json.dump(results, f, indent=2)
-
-    print("plots saved to just_ask_nicely_tokens.png")
-
-majority_vote_graphs()
-just_ask_nicely()
+dataset = load_2024_dataset()
+cache = get_or_create_cache(RESPONSE_CACHE_FILENAME)
+run_majority_vote_inference_experiments(dataset, cache)
+run_just_ask_nicely_experiments(dataset, cache)

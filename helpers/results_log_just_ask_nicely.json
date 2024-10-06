@@ -2,41 +2,41 @@
   {
     "token_limit": 16,
     "accuracy": 0.2,
-    "avg_tokens": 363.46666666666664
+    "avg_tokens_used": 363.46666666666664
   },
   {
     "token_limit": 32,
     "accuracy": 0.26666666666666666,
-    "avg_tokens": 420.4
+    "avg_tokens_used": 420.4
   },
   {
     "token_limit": 64,
     "accuracy": 0.2,
-    "avg_tokens": 470.6
+    "avg_tokens_used": 470.6
   },
   {
     "token_limit": 128,
     "accuracy": 0.43333333333333335,
-    "avg_tokens": 1106.3
+    "avg_tokens_used": 1106.3
   },
   {
     "token_limit": 256,
     "accuracy": 0.36666666666666664,
-    "avg_tokens": 2193.733333333333
+    "avg_tokens_used": 2193.733333333333
   },
   {
     "token_limit": 512,
     "accuracy": 0.4,
-    "avg_tokens": 5355.2
+    "avg_tokens_used": 5355.2
   },
   {
     "token_limit": 1024,
     "accuracy": 0.6,
-    "avg_tokens": 8668.3
+    "avg_tokens_used": 8668.3
   },
   {
     "token_limit": 2048,
     "accuracy": 0.5333333333333333,
-    "avg_tokens": 11103.566666666668
+    "avg_tokens_used": 11103.566666666668
   }
 ]

@@ -5,8 +5,8 @@
 Two weeks ago, OpenAI released the o1 family of models along with a graph showing scaling laws for inference time compute. Using only the public o1-mini API, I tried to reconstruct the graph as closely as possible. The original is on the left, my attempt is on the right.
 
 <p align="center">
-  <img src="o1_original.jpg" alt="Scaling Laws Graph" height="300px" style="height: 300px; width: auto;">
-  <img src="accuracy_vs_tokens_no_shade_regions.png" alt="Reconstructed Graph" height="300px" style="height: 300px; width: auto;">
+  <img src="graphs/o1_original.jpg" alt="Scaling Laws Graph" height="300px" style="height: 300px; width: auto;">
+  <img src="graphs/accuracy_vs_tokens_no_shade_regions.png" alt="Reconstructed Graph" height="300px" style="height: 300px; width: auto;">
 </p>
 
 ## Methodology
@@ -18,8 +18,8 @@ The OpenAI API does not allow you to easily control how many tokens to spend at 
 Here's a plot of how many tokens we ask o1-mini to think for against how many it actually uses. If you request a very small token budget, it often refuses to listen. The same for large token budgets. But requesting between $2^4$ and $2^{11}$ tokens seems to work reasonably well.
 
 <p align="center">
-  <img src="full_just_ask_nicely.png" alt="Full plot" width="45%">
-  <img src="just_ask_nicely_tokens.png" alt="Focused plot" width="45%">
+  <img src="graphs/full_just_ask_nicely.png" alt="Full plot" width="45%">
+  <img src="graphs/just_ask_nicely_tokens.png" alt="Focused plot" width="45%">
 </p>
 
 When restricting to just that region of $2^4$ to $2^{11}$, we get the following curve. Note that o1-mini doesn't really "listen" to the precise number of tokens we ask it to use. In fact, in this region, it seems to consistently use ~8 times as many tokens as we ask for!
@@ -31,7 +31,7 @@ This only gets us ~$2^{14}$ = 16K tokens spent at test-time. Despite fiddling wi
 One natural question when seeing scaling laws graphs is: how long does this trend continue? For the original scaling laws for pre-training, each additional datapoint cost millions of dollars so it took some time to see the additional datapoints. In this case, for scaling inference, the reconstructed graph was surprisingly cheap to make. $2^{17}$ tokens / problem * 30 AIME problems from 2024 = ~4M tokens. At \$12 / 1M output tokens, the largest inference run only costs about \$50. o1-mini really isn't that expensive!
 
 <p align="center">
-  <img src="accuracy_vs_tokens_shade_regions.png" alt="Shaded By Region Main Plot" width="50%">
+  <img src="graphs/accuracy_vs_tokens_shade_regions.png" alt="Shaded By Region Main Plot" width="50%">
 </p>
 
 Sadly, self-consistency / majority vote doesn't seem to scale much past the initial gains. I increased the samples 16x beyond the most successful run, but there are no more gains beyond $2^{17}$ total tokens and getting ~70%, which is just under what the original OpenAI graph showed. This is consistent with past work suggesting that majority voting saturates at some point (classic statistics says something similar too).
