@@ -12,6 +12,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
 
     Args:
         results (list[dict[str, typing.Any]]): The results to plot.
+        shade_regions (bool): Whether to shade the regions.
     """
     plt.figure(figsize=(5, 6))
     plt.scatter([r['avg_tokens_used'] for r in results], [100*r['accuracy'] for r in results], marker='o')
@@ -66,6 +67,7 @@ def plot_just_ask_nicely_graph(results: list[dict[str, typing.Any]], run_full_ra
 
     Args:
         results (list[dict[str, typing.Any]]): The results to plot.
+        run_full_range (bool): Whether to run the full range of token limits.
     """
     plt.figure(figsize=(6, 6))
     plt.scatter([r['token_limit'] for r in results], [r['avg_tokens_used'] for r in results], marker='o')
