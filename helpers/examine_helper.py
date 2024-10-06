@@ -2,6 +2,10 @@ import json
 import random
 from IPython import embed
 
+"""
+A helper script to examine the data in the response cache.
+"""
+
 with open('response_cache.json', 'r') as file:
     data = json.load(file)
 
