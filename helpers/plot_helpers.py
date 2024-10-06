@@ -55,7 +55,7 @@ def plot_majority_vote_graph(results: list[dict[str, typing.Any]], shade_regions
         token_limit_vs_actual_plot_name = 'token_limit_vs_actual.png'
         plt.savefig(f"{GRAPH_FOLDER}/{token_limit_vs_actual_plot_name}")
 
-        with open(f'{HELPER_FOLDER}/results_log.json', 'w') as f:
+        with open(f'{HELPER_FOLDER}/results_log_majority_vote.json', 'w') as f:
             json.dump(results, f, indent=2)
 
         print(f"plots saved to {token_limit_vs_actual_plot_name}")
@@ -79,8 +79,8 @@ def plot_just_ask_nicely_graph(results: list[dict[str, typing.Any]], run_full_ra
         plt_name = f"{GRAPH_FOLDER}/full_just_ask_nicely.png"
     else:
         plt_name = f"{GRAPH_FOLDER}/just_ask_nicely_tokens.png"
-        
-        with open(f'{HELPER_FOLDER}/results_log.json', 'w') as f:
+
+        with open(f'{HELPER_FOLDER}/results_log_just_ask_nicely.json', 'w') as f:
             json.dump(results, f, indent=2)
     
     plt.savefig(plt_name)

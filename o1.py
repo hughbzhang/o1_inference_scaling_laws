@@ -164,7 +164,7 @@ def generate_single_response(example: dict, token_limit: int, cache: dict, idx: 
     return answer, response['tokens']
 
 
-def process_single_example(example: dict, token_limit: int, cache: dict, N: int) -> tuple[bool, int]:
+def process_single_example(example: dict, token_limit: int, cache: dict, N: int) -> tuple[float, int]:
     """
     Process a single example by running the model N times and then taking the majority vote.
 
@@ -199,9 +199,18 @@ def process_single_example(example: dict, token_limit: int, cache: dict, N: int)
                   f"Obtained answers: {sorted(answers)}.")
 
     # Compute majority vote
-    majority_answer = statistics.mode(answers)
-    is_correct = majority_answer == int(example['answer'])
-    return is_correct, total_tokens
+    majority_answers = statistics.multimode(answers)
+
+    score = 0
+
+    if int(example['answer']) in majority_answers:
+        # If the majority answer is in the correct answer, we consider it correct.
+        # If there are multiple majority answers, we give partial credit to preserve
+        # determinism.
+        score = 1 / len(majority_answers)
+        majority_answer = None
+
+    return score, total_tokens
 
 
 def run_experiments(dataset: list[dict], cache: dict[str, typing.Any], token_limit: int, N: int) -> tuple[float, float]:
@@ -217,7 +226,7 @@ def run_experiments(dataset: list[dict], cache: dict[str, typing.Any], token_lim
     Returns:
         tuple[float, float]: A tuple containing the accuracy and average tokens used.
     """
-    correct_count = 0
+    total_score = 0
     actual_tokens_used = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
@@ -225,14 +234,14 @@ def run_experiments(dataset: list[dict], cache: dict[str, typing.Any], token_lim
         futures = [executor.submit(process_single_example, example, token_limit, cache, N) for example in dataset]
 
         for future in concurrent.futures.as_completed(futures):
-            is_correct, tokens = future.result()
-            if is_correct:
-                correct_count += 1
+            score, tokens = future.result()
+            if score > 0:
+                total_score += score
             actual_tokens_used.append(tokens)
         
         save_cache(cache, RESPONSE_CACHE_FILENAME)
     
-    accuracy = correct_count / len(dataset)
+    accuracy = total_score / len(dataset)
     avg_tokens_used = np.mean(actual_tokens_used)
     logging.debug(f"Requested token limit: {token_limit}. Accuracy: {accuracy}. Average tokens used: {avg_tokens_used}.")
     return accuracy, avg_tokens_used

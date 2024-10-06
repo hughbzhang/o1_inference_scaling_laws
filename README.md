@@ -5,7 +5,7 @@
 Two weeks ago, OpenAI released the o1 family of models along with a graph showing scaling laws for inference time compute. Using only the public o1-mini API, I tried to reconstruct the graph as closely as possible. The original is on the left, my attempt is on the right.
 
 <p align="center">
-  <img src="graphs/g1_original.jpg" alt="Scaling Laws Graph" height="300px" style="height: 300px; width: auto;">
+  <img src="graphs/o1_original.jpg" alt="Scaling Laws Graph" height="300px" style="height: 300px; width: auto;">
   <img src="graphs/accuracy_vs_tokens_no_shade_regions.png" alt="Reconstructed Graph" height="300px" style="height: 300px; width: auto;">
 </p>
 
