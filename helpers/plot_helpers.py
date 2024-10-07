@@ -87,3 +87,22 @@ def plot_just_ask_nicely_graph(results: list[dict[str, typing.Any]], run_full_ra
     
     plt.savefig(plt_name)
     print(f"plots saved to {plt_name}")
+
+def plot_run_fixed_budget_experiments(results: list[dict[str, typing.Any]], token_limit_power: int) -> None:
+    """
+    Plot the results of the fixed budget experiments.
+
+    Args:
+        results (list[dict[str, typing.Any]]): The results to plot.
+    """
+    plt.figure(figsize=(6, 6))
+    plt.scatter([r['token_limit_per_query'] for r in results], [100*r['accuracy'] for r in results], marker='o')
+    plt.xscale('log', base=2)
+    plt.xlabel('Requested Token Limit Per Query')
+    plt.ylabel('Accuracy')
+    plt.ylim(0, 100)
+    plt.title('Requested Token Limit Per Query vs Accuracy')
+    plt.tight_layout()
+    graph_name = f"{GRAPH_FOLDER}/fixed_budget_experiments_{token_limit_power}.png"
+    plt.savefig(graph_name)
+    print(f"plots saved to {graph_name}")

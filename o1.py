@@ -10,7 +10,7 @@ import numpy as np
 import concurrent.futures
 import statistics
 from PIL import Image
-from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph
+from helpers.plot_helpers import plot_majority_vote_graph, plot_just_ask_nicely_graph, plot_run_fixed_budget_experiments
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -91,7 +91,7 @@ def get_response(problem: str, token_limit: int, cache: dict, idx: int = 0) -> d
         return cache[cache_key]
     
     formatted_prompt = PROMPT.format(problem=problem, token_limit=token_limit)
-    logging.debug(f"Requesting {token_limit} tokens for problem starting with: {problem[:20]} running {idx} of {N} times.")
+    logging.debug(f"Requesting {token_limit} tokens for problem starting with: {problem[:20]} running {idx}.")
     response = OPENAI_CLIENT.chat.completions.create(
         model=O1_MODEL,
         messages=[{"role": "user", "content": formatted_prompt}]
@@ -308,8 +308,31 @@ def run_just_ask_nicely_experiments(dataset: list[dict], cache: dict[str, typing
         results.append(result)
     plot_just_ask_nicely_graph(results, run_full_range)
 
+def run_fixed_budget_experiments(dataset: list[dict], cache: dict[str, typing.Any], token_limit_power: int = 12) -> None:
+    """
+    Run experiments where we fix the budget and play with the tradeoff between more requested tokens per query 
+    vs. more majority vote.
+
+    Args:
+        dataset (list[dict]): The dataset of problems to run the experiments on.
+        cache (dict[str, typing.Any]): The cache to use for storing responses.
+        token_limit_power (int, optional): The power of the token limit. Defaults to 12.
+    """
+    results = []
+    min_token_limit_power = 9
+    assert min_token_limit_power < token_limit_power, f"Min token limit {min_token_limit_power} must be less than max token limit {token_limit_power}."
+    for tlp in range(min_token_limit_power, token_limit_power+1):
+        token_limit =  2**tlp
+        total_token_limit = 2**token_limit_power
+        N = total_token_limit // token_limit
+        logging.debug(f"Running experiments for token limit {token_limit} with {N} samples.")
+        accuracy, avg_tokens_used = run_experiments(dataset, cache, token_limit, N)
+        results.append({"accuracy": accuracy, "token_limit_per_query": token_limit})
+    plot_run_fixed_budget_experiments(results, token_limit_power)
+
 
 dataset = load_2024_dataset()
 cache = get_or_create_cache(RESPONSE_CACHE_FILENAME)
 run_majority_vote_inference_experiments(dataset, cache)
 run_just_ask_nicely_experiments(dataset, cache)
+run_fixed_budget_experiments(dataset, cache)
