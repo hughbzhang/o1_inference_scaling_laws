@@ -39,3 +39,15 @@ Sadly, self-consistency / majority vote doesn't seem to scale much past the init
 ## Conclusion
 
 Note that this is a reconstruction, not a replication. I don't know how the original graph was made, and do NOT claim that it was made using the methodology here. Also, this graph uses o1-mini (over o1-preview because of speed/cost), not o1 (unreleased), which the original uses. o1-mini is also better than o1-preview at math (including AIME) anyways.
+
+### Citation
+
+If you use this repository in your work, please cite it as follows:
+
+```bibtex
+@misc{zhang_o1_inference_scaling_laws,
+  author = {Hugh Zhang and Celia Chen},
+  title = {Test-Time Compute Scaling Laws},
+  year = {2024},
+  howpublished = {\url{https://github.com/hughbzhang/o1_inference_scaling_laws}}
+}
